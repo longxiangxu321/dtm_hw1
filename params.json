@@ -1,0 +1,21 @@
+{
+  "input-file": "samples.xyz",
+  "nn": {
+    "output-file": "nn.asc",
+    "cellsize": 2.0
+  },
+  "idw": {
+    "output-file": "idw.asc",
+    "cellsize": 1.0,
+    "power": 2,
+    "radius": 25
+  },
+  "tin": {
+    "output-file": "tin.asc",
+    "cellsize": 1.0
+  },
+  "nni": {
+    "output-file": "nni.asc",
+    "cellsize": 1.0
+  }
+}
