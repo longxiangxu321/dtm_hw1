@@ -115,7 +115,7 @@ def tin_xy(dt, kd, all_z, x, y):
     return z
 
 
-def get_area(*args):
+def get_area(args):
     t_area = 0
     for i in range(len(args) - 1):
         t_area = t_area + (args[i][0] * args[i + 1][1]) - (args[i + 1][0] * args[i][1])
@@ -162,65 +162,73 @@ def nni_xy(dt, kd, all_z, x, y):
         index_nn = dt.closest_point(x, y)  # determine whether input point is inside the convex hull
     except Exception:
         raise Exception("Outside convex hull")
-    tri = dt.locate(x, y)  # return index of the three vertices (the three vertices forms the triangle contains the
-    # input)
+    in_pt = dt.insert_one_pt(x, y, z)
+    adj_ver = dt.adjacent_vertices_to_vertex(in_pt)
+    adj_tri = dt.incident_triangles_to_vertex(in_pt)
+    v_cell = []
 
-    p0 = dt.points[tri[0]]
-    p1 = dt.points[tri[1]]
-    p2 = dt.points[tri[2]]
+    # obtain the size of the input voronoi cell
+    for tri in adj_tri:
+        x1 = dt.points[tri][0][0:2]
+        y1 = dt.points[tri][1][0:2]
+        z1 = dt.points[tri][2][0:2]
+        vd_vertex = get_circumcenter(x1, y1, z1)
+        v_cell.append(vd_vertex)
+    vo_cell_size = get_area(v_cell)      # A
 
-    p0_n = dt.adjacent_vertices_to_vertex(tri[0])
-    p1_n = dt.adjacent_vertices_to_vertex(tri[1])
-    p2_n = dt.adjacent_vertices_to_vertex(tri[2])
+    # obtain the cell_size of the adjacent cells of the input point cell
+    area_after_insertion = {}
+    for pt in adj_ver:
+        triangles = dt.incident_triangles_to_vertex(pt)
+        v1_cell = []
+        for triangle in triangles:
+            # breakpoint()
+            x1 = dt.points[triangle][0][0:2]
+            y1 = dt.points[triangle][1][0:2]
+            z1 = dt.points[triangle][2][0:2]
+            vd_vertex = get_circumcenter(x1, y1, z1)
+            v1_cell.append(vd_vertex)
+        area_after_insertion[pt] = get_area(v1_cell)  # Bi
 
-    p01 = dt.points[np.setdiff1d(np.intersect1d(p0_n, p1_n), tri[2])[0]]
-    p02 = dt.points[np.setdiff1d(np.intersect1d(p0_n, p2_n), tri[1])[0]]
-    p12 = dt.points[np.setdiff1d(np.intersect1d(p1_n, p2_n), tri[0])[0]]
-
-    v_01 = get_circumcenter(p0, p1, p01)
-    v_02 = get_circumcenter(p0, p2, p02)
-    v_12 = get_circumcenter(p1, p2, p12)
-    v_012 = get_circumcenter(p0, p1, p2)
-
-    new_pt = dt.insert_one_pt(x, y, z)
-
-    v_0_01 = get_circumcenter(p0, p01, [x, y])
-    v_1_01 = get_circumcenter(p1, p01, [x, y])
-
-    v_0_02 = get_circumcenter(p0, p02, [x, y])
-    v_2_02 = get_circumcenter(p2, p02, [x, y])
-
-    v_1_12 = get_circumcenter(p1, p12, [x, y])
-    v_2_12 = get_circumcenter(p2, p12, [x, y])
-
-    a_01 = get_area(v_0_01, v_1_01, v_01)
-    a_02 = get_area(v_0_02, v_2_02, v_02)
-    a_12 = get_area(v_1_12, v_2_12, v_12)
-
-    a0 = get_area(v_0_01, v_01, v_012, v_02, v_0_02)
-    a1 = get_area(v_01, v_1_01, v_1_12, v_12, v_012)
-    a2 = get_area(v_012, v_12, v_2_12, v_2_02, v_02)
-
-    area = get_area(v_0_01, v_1_01, v_1_12, v_2_12, v_2_02, v_0_02)
-    area_1 = a_01 + a_02 + a_12 + a0 + a1 + a2
-    print(area - area_1)
     # breakpoint()
 
-    weights = [a0 / area, a1 / area, a2 / area, a_01 / area, a_02 / area, a_12 / area]
-    z_val = [p0[2], p1[2], p2[2], p01[2], p02[2], p12[2]]
-    z = np.average(z_val, weights=weights)
-    # 首先，找到输入点包含的三角形的三个顶点locate(), 找到与该三角形直接相接的三个三角形顶点adjacent_vertices_to_vertex()
-    # 输出当中重复的点即为顶点三角形的每条边及其相接的三角形的顶点，求外接圆的圆心，即为voronoi vertex
-    # 对新点，以及先前的三个点连线分别计算外接圆的圆心，即为新的voronoi vertex
-    # 用方程求解新旧voronoi vertex连成的图形
-    # 重复下一个
+    dt.remove(in_pt)
+
+    # obtain the cell_size of the adjacent cells of the input point cell (before insertion)
+    area_before_insertion = {}
+    for pt in adj_ver:
+        adj_triangles = dt.incident_triangles_to_vertex(pt)
+        v2_cell = []
+        for triangle in adj_triangles:
+            # breakpoint()
+            x1 = dt.points[triangle][0][0:2]
+            y1 = dt.points[triangle][1][0:2]
+            z1 = dt.points[triangle][2][0:2]
+            vd_vertex = get_circumcenter(x1, y1, z1)
+            v2_cell.append(vd_vertex)
+        area_before_insertion[pt] = get_area(v2_cell)  # Ai
+
+    # breakpoint()
+    weights = {}
+    for pt in adj_ver:
+        weights[pt] = (area_before_insertion[pt] - area_after_insertion[pt]) / vo_cell_size
+
+    # breakpoint()
+    wei = list(weights.values())
+    z_val = []
+    # breakpoint()
+    for pt in adj_ver:
+        z_val.append(dt.points[pt][2])
+    # breakpoint()
+    z = np.average(z_val, weights=wei)
 
 
-    # 先找到插入点的所有的相接点，再分别计算相接点的所有相接点的外接圆圆心，构成voronoi cell的到Ai
+    # 先找到插入点的所有的相接点，再分别计算相接点和所有相接点的三角形的外接圆圆心，构成voronoi cell的到Ai
     # 插入点，找到所有相接点，计算所有外接圆圆心，计算面积A0
     # 找到插入点的所有相接点，再分别计算相接点的所有相接点的外接圆圆心，构成voronoi cell的到Bi
-    # Ai - Bi / A = weight
-    dt.remove(new_pt)
+    # (Ai - Bi) / A = weight
+    # breakpoint()
+    #实际顺序要反过来一下,因为得先insert再remove
     # std = dt.interpolate_nni(x, y)
     # error = z - std
     # print(error)
