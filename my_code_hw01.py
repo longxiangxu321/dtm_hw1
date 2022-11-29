@@ -7,6 +7,7 @@ import random
 import math
 
 import numpy as np
+import scipy
 
 
 def nn_xy(dt, kd, all_z, x, y):
@@ -121,7 +122,8 @@ def get_area(args):
         t_area = t_area + (args[i][0] * args[i + 1][1]) - (args[i + 1][0] * args[i][1])
 
     t_area = t_area + args[-1][0] * args[0][1] - args[0][0] * args[-1][1]
-    t_area = abs(t_area) / 2
+    # t_area = abs(t_area) / 2
+    t_area = t_area / 2
     return t_area
 
 
@@ -136,6 +138,20 @@ def get_circumcenter(x, y, z):
     ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
     uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
     return [ux, uy]
+
+
+def get_vor_cell_size(dt, center):
+    adj_triangles = dt.incident_triangles_to_vertex(center)
+    v1_cell = []
+    for triangle in adj_triangles:
+        # breakpoint()
+        x1 = dt.points[triangle][0][0:2]
+        y1 = dt.points[triangle][1][0:2]
+        z1 = dt.points[triangle][2][0:2]
+        vd_vertex = get_circumcenter(x1, y1, z1)
+        v1_cell.append(vd_vertex)
+    vor_cell_size = get_area(v1_cell)
+    return vor_cell_size
 
 
 def nni_xy(dt, kd, all_z, x, y):
@@ -162,74 +178,42 @@ def nni_xy(dt, kd, all_z, x, y):
         index_nn = dt.closest_point(x, y)  # determine whether input point is inside the convex hull
     except Exception:
         raise Exception("Outside convex hull")
+
+    # 先找到插入点的所有的相接点，再分别计算相接点和所有相接点的三角形的外接圆圆心，构成voronoi cell的到Ai
+    # 插入点，找到所有相接点，计算所有外接圆圆心，计算面积A0
+    # 找到插入点的所有相接点，再分别计算相接点的所有相接点的外接圆圆心，构成voronoi cell的到Bi
+    # (Ai - Bi) / A = weight
+    # 实际顺序要反过来一下,因为得先insert再remove
+
+    # Insert point, find the adjacent vertices and calculate their voronoi cell size, Ai
+    # Calculate the input point's voronoi cell size A
+    # remove input point, then calculate the adjacent voronoi cell size Bi
+    # weight = (Bi - Ai) / A
     in_pt = dt.insert_one_pt(x, y, z)
     adj_ver = dt.adjacent_vertices_to_vertex(in_pt)
-    adj_tri = dt.incident_triangles_to_vertex(in_pt)
-    v_cell = []
-
-    # obtain the size of the input voronoi cell
-    for tri in adj_tri:
-        x1 = dt.points[tri][0][0:2]
-        y1 = dt.points[tri][1][0:2]
-        z1 = dt.points[tri][2][0:2]
-        vd_vertex = get_circumcenter(x1, y1, z1)
-        v_cell.append(vd_vertex)
-    vo_cell_size = get_area(v_cell)      # A
+    vo_cell_size = get_vor_cell_size(dt, in_pt)  # A
 
     # obtain the cell_size of the adjacent cells of the input point cell
     area_after_insertion = {}
     for pt in adj_ver:
-        triangles = dt.incident_triangles_to_vertex(pt)
-        v1_cell = []
-        for triangle in triangles:
-            # breakpoint()
-            x1 = dt.points[triangle][0][0:2]
-            y1 = dt.points[triangle][1][0:2]
-            z1 = dt.points[triangle][2][0:2]
-            vd_vertex = get_circumcenter(x1, y1, z1)
-            v1_cell.append(vd_vertex)
-        area_after_insertion[pt] = get_area(v1_cell)  # Bi
-
-    # breakpoint()
+        vor_cell_size = get_vor_cell_size(dt, pt)  # Bi
+        area_after_insertion[pt] = vor_cell_size
 
     dt.remove(in_pt)
 
     # obtain the cell_size of the adjacent cells of the input point cell (before insertion)
     area_before_insertion = {}
     for pt in adj_ver:
-        adj_triangles = dt.incident_triangles_to_vertex(pt)
-        v2_cell = []
-        for triangle in adj_triangles:
-            # breakpoint()
-            x1 = dt.points[triangle][0][0:2]
-            y1 = dt.points[triangle][1][0:2]
-            z1 = dt.points[triangle][2][0:2]
-            vd_vertex = get_circumcenter(x1, y1, z1)
-            v2_cell.append(vd_vertex)
-        area_before_insertion[pt] = get_area(v2_cell)  # Ai
+        vor_size = get_vor_cell_size(dt, pt)  # Ai
+        area_before_insertion[pt] = vor_size
 
-    # breakpoint()
     weights = {}
     for pt in adj_ver:
         weights[pt] = (area_before_insertion[pt] - area_after_insertion[pt]) / vo_cell_size
 
-    # breakpoint()
     wei = list(weights.values())
     z_val = []
-    # breakpoint()
     for pt in adj_ver:
         z_val.append(dt.points[pt][2])
-    # breakpoint()
     z = np.average(z_val, weights=wei)
-
-
-    # 先找到插入点的所有的相接点，再分别计算相接点和所有相接点的三角形的外接圆圆心，构成voronoi cell的到Ai
-    # 插入点，找到所有相接点，计算所有外接圆圆心，计算面积A0
-    # 找到插入点的所有相接点，再分别计算相接点的所有相接点的外接圆圆心，构成voronoi cell的到Bi
-    # (Ai - Bi) / A = weight
-    # breakpoint()
-    #实际顺序要反过来一下,因为得先insert再remove
-    # std = dt.interpolate_nni(x, y)
-    # error = z - std
-    # print(error)
     return z
